@@ -14,7 +14,7 @@ A JavaScript browser extension to extract group contact information from WhatsAp
 ### 1. Clone the Repository
 
 ```
-git clone https://github.com/your-username/whatsapp-contact-extractor.git
+git clone https://github.com/jigneshshiyal/whatsapp-group-contact-extractor-extension.git
 ```
 
 ### 2. Load the Extension in Chrome
