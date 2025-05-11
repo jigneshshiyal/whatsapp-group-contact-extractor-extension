@@ -1,8 +1,5 @@
 Sure! Here's the complete `README.md` content in Markdown format for your WhatsApp contact extraction browser extension project:
 
----
-
-```markdown
 # 📦 WhatsApp Contact Extractor Extension
 
 A JavaScript browser extension to extract group contact information from WhatsApp Web by accessing the internal IndexedDB storage. Built for researchers, analysts, and developers who need to analyze group contact metadata for automation or data insights.
@@ -18,7 +15,7 @@ A JavaScript browser extension to extract group contact information from WhatsAp
 
 ### 1. Clone the Repository
 
-```bash
+```
 git clone https://github.com/your-username/whatsapp-contact-extractor.git
 ```
 
