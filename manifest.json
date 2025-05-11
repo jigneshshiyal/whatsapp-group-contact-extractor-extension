@@ -1,0 +1,15 @@
+{
+    "manifest_version": 3,
+    "name": "WhatsApp Group Extractor",
+    "version": "1.0",
+    "description": "Extract WhatsApp group participants and contact details",
+    "permissions": ["scripting", "activeTab"],
+    "host_permissions": ["https://web.whatsapp.com/*"],
+    "action": {
+      "default_popup": "popup.html"
+    },
+    "background": {
+      "service_worker": "background.js"
+    }
+  }
+  
