@@ -1,93 +1,116 @@
 document.addEventListener("DOMContentLoaded", async () => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  
-    // Inject content script if not already injected
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ["content.js"]
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["content.js"]
+  });
+
+  chrome.tabs.sendMessage(tab.id, { type: "get_whatsapp_data" }, (response) => {
+    if (!response?.success) {
+      document.body.innerHTML = `<p>Error: ${response?.error || 'Could not fetch data from WhatsApp. Please ensure web.whatsapp.com is the active tab and reload.'}</p>`;
+      return;
+    }
+
+    const { groups, participants, contacts } = response.data;
+    const groupList = document.getElementById("group-list");
+    const exportZipBtn = document.getElementById("export-zip-btn");
+
+    let selectedGroupIds = new Set();
+
+    groups.forEach(group => {
+      const groupItem = document.createElement("div");
+      groupItem.className = "group-item";
+      
+      const label = document.createElement("label");
+      
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = group.id;
+      checkbox.dataset.groupName = group.subject;
+
+      const groupName = document.createElement("span");
+      groupName.className = "group-name";
+      // FIX: Display a placeholder for groups with no name
+      groupName.textContent = group.subject || "Unnamed Group"; 
+
+      label.appendChild(checkbox);
+      label.appendChild(groupName);
+      groupItem.appendChild(label);
+      groupList.appendChild(groupItem);
     });
-  
-    // Then send the message
-    chrome.tabs.sendMessage(tab.id, { type: "get_whatsapp_data" }, (response) => {
-      if (!response?.success) {
-        document.body.innerHTML = `<p>Error: ${response?.error || 'Could not fetch data.'}</p>`;
+
+    groupList.addEventListener('change', (event) => {
+        if (event.target.type === 'checkbox') {
+            const groupId = event.target.value;
+            if (event.target.checked) {
+                selectedGroupIds.add(groupId);
+            } else {
+                selectedGroupIds.delete(groupId);
+            }
+            exportZipBtn.disabled = selectedGroupIds.size === 0;
+        }
+    });
+
+    exportZipBtn.onclick = () => {
+      if (selectedGroupIds.size === 0) {
+        alert("Please select at least one group to export.");
         return;
       }
-  
-      const { groups, participants, contacts } = response.data;
-      const groupList = document.getElementById("group-list");
-      const participantInfo = document.getElementById("participant-info");
-      const exportBtn = document.getElementById("export-btn");
-  
-      let currentGroupData = [];
-      let currentGroupName = '';
-  
-      groups.forEach(group => {
-        const div = document.createElement("div");
-        div.textContent = group.subject;
-        div.className = "group";
-        div.onclick = () => {
-          currentGroupName = group.subject; // Store the group name for use in filename
-  
-          const part = participants.find(p => p.groupId === group.id);
-          if (!part) {
-            participantInfo.innerHTML = `<p>No participant info found.</p>`;
-            return;
-          }
-  
-          // Map participants to extract the contact info
-          currentGroupData = part.participants.map(id => {
-            const contact = contacts.find(c => c.phoneNumber === id);
-            const name = contact ? contact.pushname : 'Unknown'; // Use pushname for the name
-            const phoneNumber = contact ? id.replace('@c.us', '') : 'Unknown'; // Clean phone number
-            const isSaved = contact?.isAddressBookContact ? 'Yes' : 'No';
-  
-            return {
-              phoneNumber: phoneNumber,
-              name: name,
-              isSaved: isSaved
-            };
-          });
-  
-          // Hide the participants list (optional, if you don't want to show them in the popup)
-          participantInfo.style.display = 'none';
-  
-          // Show Export CSV Button
-          exportBtn.style.display = 'block'; 
-          exportBtn.textContent = `Export ${group.subject} to CSV`;
-        };
-        groupList.appendChild(div);
-      });
-  
-      // Export CSV function
-      exportBtn.onclick = () => {
-        if (!currentGroupData.length) {
-          alert("No participants found to export.");
-          return;
+
+      const zip = new JSZip();
+
+      selectedGroupIds.forEach(groupId => {
+        const group = groups.find(g => g.id === groupId);
+        const part = participants.find(p => p.groupId === groupId);
+
+        if (!group || !part) return;
+
+        const participantData = part.participants.map(id => {
+          const contact = contacts.find(c => c.phoneNumber === id);
+          
+          // FIX #1: Add a check to ensure 'id' is a string before calling replace.
+          const phoneNumber = (typeof id === 'string') ? id.replace('@c.us', '') : 'INVALID_ID';
+
+          return {
+            phoneNumber: phoneNumber,
+            name: contact ? contact.pushname : 'Unknown',
+            isSaved: contact?.isAddressBookContact ? 'Yes' : 'No'
+          };
+        });
+
+        if (participantData.length > 0) {
+          // FIX #2: Provide a fallback name if group.subject is undefined.
+          const groupName = group.subject || `Unknown_Group_${groupId}`;
+          const safeFileName = groupName.replace(/[\/:*?"<>|]/g, "_") + ".csv";
+          
+          const csvContent = generateCSV(participantData);
+          zip.file(safeFileName, csvContent);
         }
-        const csvContent = generateCSV(currentGroupData);
-        downloadCSV(csvContent, currentGroupName);
-      };
-    });
+      });
+      
+      zip.generateAsync({ type: "blob" }).then(blob => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = "WhatsApp_Groups_Export.zip";
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }).catch(err => {
+        console.error("Error creating ZIP file:", err);
+        alert("Failed to create ZIP file.");
+      });
+    };
   });
-  
-  // Function to generate CSV content
-  function generateCSV(data) {
-    const header = ['Phone Number', 'Name', 'Is Saved'];
-    const rows = data.map(row => [row.phoneNumber, row.name, row.isSaved]);
-  
-    // Add header and rows to the CSV content
-    const csv = [header, ...rows].map(e => e.join(",")).join("\n");
-    return csv;
-  }
-  
-  // Function to trigger CSV file download
-  function downloadCSV(csvContent, groupName) {
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const safeGroupName = groupName.replace(/[\/:*?"<>|]/g, "_"); // Clean up group name to be a valid filename
-    link.href = URL.createObjectURL(blob);
-    link.download = `${safeGroupName}.csv`; // Use group name as part of the filename
-    link.click();
-  }
-  
+});
+
+function generateCSV(data) {
+  const header = ['Phone Number', 'Name', 'Is Saved'];
+  const rows = data.map(row => [
+    `"${row.phoneNumber}"`,
+    `"${(row.name || '').replace(/"/g, '""')}"`, // Also defend against null/undefined names
+    `"${row.isSaved}"`
+  ]);
+
+  const csv = [header.join(","), ...rows.map(e => e.join(","))].join("\n");
+  return csv;
+}
